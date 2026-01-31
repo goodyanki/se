@@ -24,10 +24,16 @@ const Chat: React.FC = () => {
     const [messages, setMessages] = useState<{ id: number, text: string, sender: 'me' | 'them' }[]>([]);
     const [input, setInput] = useState('');
     const [newAddress, setNewAddress] = useState('');
+    const messagesEndRef = useRef<HTMLDivElement>(null);
 
     const {
         token: { colorBgContainer, colorPrimary },
     } = theme.useToken();
+
+    // Auto-scroll to bottom when messages change
+    useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [messages]);
 
     const connectWebSocket = () => {
         if (!user) return;
@@ -360,6 +366,7 @@ const Chat: React.FC = () => {
                                         </div>
                                     </div>
                                 ))}
+                                <div ref={messagesEndRef} />
                                 {messages.length === 0 && (
                                     <div style={{ textAlign: 'center', marginTop: '50px', color: '#ccc' }}>
                                         Start chatting with {selectedChat.name}

@@ -21,44 +21,44 @@ const Home: React.FC = () => {
     }, [searchTerm, selectedCategory]);
 
     return (
-        <div className="container" style={{ padding: '2rem 1rem', maxWidth: '1200px', margin: '0 auto' }}>
+        <div className="container" style={{ padding: '2rem 1rem', maxWidth: '1200px', margin: '0 auto', width: '100%' }}>
 
             {/* Search and Filter Section */}
-            <div style={{ marginBottom: '2rem' }}>
-                <Row gutter={[16, 16]} align="middle">
-                    <Col xs={24} md={12}>
-                        <Input
-                            size="large"
-                            placeholder="Search for books, electronics..."
-                            prefix={<SearchOutlined />}
-                            value={searchTerm}
-                            onChange={e => setSearchTerm(e.target.value)}
-                        />
-                    </Col>
-                    <Col xs={24} md={12}>
-                        <Radio.Group
-                            value={selectedCategory}
-                            onChange={e => setSelectedCategory(e.target.value)}
-                            buttonStyle="solid"
-                        >
-                            {CATEGORIES.slice(0, 5).map(cat => (
-                                <Radio.Button key={cat} value={cat}>{cat}</Radio.Button>
-                            ))}
-                        </Radio.Group>
-                    </Col>
-                </Row>
+            <div style={{ marginBottom: '2rem', width: '100%' }}>
+                <div style={{ marginBottom: '1rem', width: '100%' }}>
+                    <Input
+                        size="large"
+                        placeholder="Search for books, electronics..."
+                        prefix={<SearchOutlined />}
+                        value={searchTerm}
+                        onChange={e => setSearchTerm(e.target.value)}
+                        style={{ width: '100%' }}
+                    />
+                </div>
+                <div style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
+                    <Radio.Group
+                        value={selectedCategory}
+                        onChange={e => setSelectedCategory(e.target.value)}
+                        buttonStyle="solid"
+                    >
+                        {CATEGORIES.slice(0, 5).map(cat => (
+                            <Radio.Button key={cat} value={cat}>{cat}</Radio.Button>
+                        ))}
+                    </Radio.Group>
+                </div>
             </div>
 
             {/* Grid */}
             <List
-                grid={{ gutter: 24, xs: 1, sm: 2, md: 4, lg: 4, xl: 4, xxl: 4 }}
+                grid={{ gutter: 24, xs: 1, sm: 2, md: 3, lg: 3, xl: 3, xxl: 4 }}
                 dataSource={filteredItems}
                 locale={{ emptyText: <Empty description="No items found" /> }}
                 renderItem={item => (
-                    <List.Item>
+                    <List.Item style={{ width: '100%' }}>
                         <Link to={`/items/${item.id}`}>
                             <AntCard
                                 hoverable
+                                style={{ height: '100%', minHeight: '380px' }}
                                 cover={
                                     <div style={{ height: 200, overflow: 'hidden', background: '#f5f5f5' }}>
                                         <img alt={item.title} src={item.image} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
