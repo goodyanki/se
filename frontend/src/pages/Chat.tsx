@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Input, Button, List, Avatar, Typography, Layout, theme } from 'antd';
 import { SendOutlined, UserOutlined } from '@ant-design/icons';
 import { useAuth } from '../context/AuthContext';
+import api from '../utils/api';
 
 const { Sider, Content } = Layout;
 const { Text } = Typography;
@@ -11,15 +12,11 @@ const Chat: React.FC = () => {
     const [socket, setSocket] = useState<WebSocket | null>(null);
     const [connectionStatus, setConnectionStatus] = useState<'CONNECTING' | 'OPEN' | 'CLOSED'>('CLOSED');
 
-    // Conversations now carry not just name (address) but also the target UserID
-    const [conversations, setConversations] = useState<{ id: string, name: string, lastMsg: string, userId: number }[]>([
-        // Mock initial
-        // { id: '1', name: 'Student_A', lastMsg: 'Yes, it is!', userId: 999 } 
-    ]);
-    const [selectedChat, setSelectedChat] = useState<{ id: string, name: string, lastMsg: string, userId: number } | null>(null);
+    const [conversations, setConversations] = useState<{ id: string, name: string, lastMsg: string }[]>([]);
+    const [selectedChat, setSelectedChat] = useState<{ id: string, name: string, lastMsg: string } | null>(null);
     const selectedChatRef = useRef(selectedChat);
+    const socketRef = useRef<WebSocket | null>(null);
 
-    // Keep ref in sync
     useEffect(() => {
         selectedChatRef.current = selectedChat;
     }, [selectedChat]);
@@ -35,8 +32,7 @@ const Chat: React.FC = () => {
     const connectWebSocket = () => {
         if (!user) return;
 
-        // Prevent multiple connections
-        if (socket && (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN)) {
+        if (socketRef.current && (socketRef.current.readyState === WebSocket.CONNECTING || socketRef.current.readyState === WebSocket.OPEN)) {
             return;
         }
 
@@ -47,28 +43,34 @@ const Chat: React.FC = () => {
         setConnectionStatus('CONNECTING');
         const ws = new WebSocket(wsUrl);
 
+        socketRef.current = ws;
+        setSocket(ws);
+
         ws.onopen = () => {
             console.log('WebSocket Connected');
-            setConnectionStatus('OPEN');
+            if (socketRef.current === ws) {
+                setConnectionStatus('OPEN');
+            }
         };
 
         ws.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
-                console.log('WS Message:', data);
 
                 const currentChat = selectedChatRef.current;
 
                 if (data.content && currentChat) {
-                    const isFromThem = data.from_user_id === currentChat.userId;
-                    const isFromMeToThem = (data.from_user_id === user.id && data.to_user_id === currentChat.userId);
+                    // Match by Wallet Address
+                    // We assume 'from_user_id' and 'to_user_id' are now string Addresses
+                    const isFromThem = data.from_user_id === currentChat.name;
+                    const isFromMeToThem = (data.from_user_id === user.address && data.to_user_id === currentChat.name);
 
                     if (isFromThem || isFromMeToThem) {
                         setMessages(prev => {
                             return [...prev, {
                                 id: data.ID || Date.now(),
                                 text: data.content,
-                                sender: data.from_user_id === user.id ? 'me' : 'them'
+                                sender: data.from_user_id === user.address ? 'me' : 'them'
                             }];
                         });
                     }
@@ -80,16 +82,17 @@ const Chat: React.FC = () => {
 
         ws.onerror = (error) => {
             console.error('WebSocket Error:', error);
-            // Wait for onclose to set status
         };
 
-        ws.onclose = () => {
-            console.log('WebSocket Disconnected');
-            setSocket(null);
-            setConnectionStatus('CLOSED');
+        ws.onclose = (event) => {
+            console.log(`WebSocket Disconnected. Code: ${event.code}, Reason: ${event.reason}`);
+            if (socketRef.current === ws) {
+                setSocket(null);
+                setConnectionStatus('CLOSED');
+                socketRef.current = null;
+            }
         };
 
-        setSocket(ws);
         return ws;
     };
 
@@ -97,9 +100,45 @@ const Chat: React.FC = () => {
     useEffect(() => {
         const ws = connectWebSocket();
         return () => {
-            if (ws) ws.close();
+            if (ws) {
+                ws.close();
+            }
         };
     }, [user]);
+
+    // Fetch chat history when selectedChat changes
+    useEffect(() => {
+        if (!selectedChat || !user) return;
+
+        const fetchHistory = async () => {
+            try {
+                // Use the name (address) as targetId directly
+                const targetId = selectedChat.name;
+
+                console.log(`Fetching history for: ${targetId}`);
+                // Assuming the route is mounted under /auth/chat/messages based on user input
+                const response = await api.get(`/auth/chat/messages/${targetId}`);
+
+                if (response.data && response.data.data) {
+                    const history = response.data.data;
+                    console.log('History fetched:', history);
+
+                    const formattedMessages = history.map((msg: any) => ({
+                        id: msg.ID,
+                        text: msg.content,
+                        sender: msg.from_user_id === user.address ? 'me' : 'them'
+                    }));
+                    setMessages(formattedMessages);
+                }
+            } catch (error) {
+                console.error('Failed to fetch history:', error);
+                // If 404, it might mean user doesn't exist or just no history? 
+                // Backend says: "该钱包地址未在该平台注册" returns 404.
+            }
+        };
+
+        fetchHistory();
+    }, [selectedChat, user]);
 
     const handleSend = () => {
         if (!input.trim()) return;
@@ -125,8 +164,8 @@ const Chat: React.FC = () => {
         }
 
         const messagePayload = {
-            from_user_id: user.id,
-            to_user_id: selectedChat.userId,
+            from_user_id: user.address, // Send Address
+            to_user_id: selectedChat.name, // Send Address
             content: input.trim(),
             product_id: 1,
             is_read: false
@@ -159,17 +198,13 @@ const Chat: React.FC = () => {
             return;
         }
 
-        // MOCK: Generate a fake User ID for this address so we can send messages
-        const mockTargetId = Math.floor(Math.random() * 10000) + 10;
-
         const newChat = {
-            id: Date.now().toString(),
+            id: newAddress, // Use address as ID
             name: newAddress,
             lastMsg: 'New conversation started',
-            userId: mockTargetId // Store this ID!
         };
 
-        console.log(`Created chat for ${newAddress} mapped to Mock ID: ${mockTargetId}`);
+        console.log(`Created chat for ${newAddress}`);
 
         setConversations([newChat, ...conversations]);
         setSelectedChat(newChat);
@@ -257,7 +292,7 @@ const Chat: React.FC = () => {
                                 ))}
                                 {messages.length === 0 && (
                                     <div style={{ textAlign: 'center', marginTop: '50px', color: '#ccc' }}>
-                                        Start chatting with {selectedChat.name} (User ID: {selectedChat.userId})
+                                        Start chatting with {selectedChat.name}
                                     </div>
                                 )}
                             </>
