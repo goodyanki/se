@@ -24,9 +24,9 @@ function App() {
     >
       <AuthProvider>
         <Router>
-          <div className="app-container" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+          <div className="app-container" style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <Navbar />
-            <div className="content" style={{ flex: 1, display: 'flex', flexDirection: 'column', backgroundColor: '#F8F9FA' }}>
+            <div className="content" style={{ flex: 1, display: 'flex', flexDirection: 'column', backgroundColor: '#F8F9FA', overflowY: 'auto', overflowX: 'hidden' }}>
               <Routes>
                 <Route path="/" element={<Home />} />
                 <Route path="/login" element={<Login />} />

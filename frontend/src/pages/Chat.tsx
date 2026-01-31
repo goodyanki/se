@@ -263,8 +263,10 @@ const Chat: React.FC = () => {
         ));
     };
 
+    // With App.tsx fixed to 100vh, we can just use 100% height here to fill "content" area.
+    // We remove huge vertical margins to ensure it fits tightly if desired.
     return (
-        <div className="container" style={{ padding: '2rem 1rem', flex: 1, display: 'flex', flexDirection: 'column', width: '100%', maxWidth: '1200px', margin: '0 auto' }}>
+        <div className="container" style={{ padding: '1rem', height: '100%', display: 'flex', flexDirection: 'column', width: '100%', maxWidth: '1200px', margin: '0 auto' }}>
             <Layout style={{ height: '100%', borderRadius: '8px', overflow: 'hidden', border: '1px solid #f0f0f0' }}>
                 <Sider width={300} style={{ background: colorBgContainer, borderRight: '1px solid #f0f0f0' }}>
                     <div style={{ padding: '16px', borderBottom: '1px solid #f0f0f0' }}>
