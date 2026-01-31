@@ -12,7 +12,7 @@ const Chat: React.FC = () => {
     const [socket, setSocket] = useState<WebSocket | null>(null);
     const [connectionStatus, setConnectionStatus] = useState<'CONNECTING' | 'OPEN' | 'CLOSED'>('CLOSED');
 
-    const [conversations, setConversations] = useState<{ id: string, name: string, lastMsg: string }[]>([]);
+    const [conversations, setConversations] = useState<{ id: string, name: string, lastMsg: string, unreadCount?: number }[]>([]);
     const [selectedChat, setSelectedChat] = useState<{ id: string, name: string, lastMsg: string } | null>(null);
     const selectedChatRef = useRef(selectedChat);
     const socketRef = useRef<WebSocket | null>(null);
@@ -109,37 +109,78 @@ const Chat: React.FC = () => {
         };
     }, [user]);
 
-    // Fetch chat history (Initial Load Only)
+    // Fetch conversation sessions
+    const fetchSessions = async () => {
+        try {
+            const response = await api.get('/auth/chat/sessions');
+            if (response.data && response.data.data) {
+                const sessions = response.data.data;
+                console.log('Sessions fetched:', sessions);
+
+                // Map backend sessions to frontend conversation format
+                const formattedConversations = sessions.map((s: any) => ({
+                    id: s.target_wallet,
+                    name: s.target_wallet,
+                    lastMsg: s.last_content,
+                    unreadCount: s.unread_count
+                }));
+                setConversations(formattedConversations);
+            }
+        } catch (error) {
+            console.error('Failed to fetch sessions:', error);
+        }
+    };
+
+    // Initial load of sessions
+    useEffect(() => {
+        if (user) {
+            fetchSessions();
+        }
+    }, [user]);
+
+    // Fetch chat history (Initial Load Only) & Mark as Read
     useEffect(() => {
         if (!selectedChat || !user) return;
 
-        const fetchHistory = async () => {
+        const fetchHistoryAndMarkRead = async () => {
             try {
-                // Use the name (address) as targetId directly
                 const targetId = selectedChat.name;
 
-                // console.log(`Fetching history for: ${targetId}`);
-                // Assuming the route is mounted under /auth/chat/messages based on user input
+                // 1. Fetch History
                 const response = await api.get(`/auth/chat/messages/${targetId}`);
-
                 if (response.data && response.data.data) {
                     const history = response.data.data;
-                    // console.log('History fetched:', history.length);
-
                     const formattedMessages = history.map((msg: any) => ({
                         id: msg.ID,
                         text: msg.content,
                         sender: msg.from_user_id === user.address ? 'me' : 'them'
                     }));
-
                     setMessages(formattedMessages);
                 }
+
+                // Backend endpoint: POST /auth/chat/read (form-data or json? User said c.PostForm("from_wallet"))
+                // Axios by default sends JSON. If backend uses c.PostForm, we might need querystring or specific header.
+                // Let's assume standard JSON first, or URL encoded body if specifically "PostForm".
+                // Gin's c.PostForm usually expects application/x-www-form-urlencoded or multipart/form-data.
+
+                // 2. Mark as Read
+                // Use FormData to ensure compatibility with backend c.PostForm
+                const formData = new FormData();
+                formData.append('from_wallet', targetId);
+
+                await api.post('/auth/chat/read', formData, {
+                    headers: { 'Content-Type': 'multipart/form-data' } // Optional, axios sets it automatically with boundary for FormData
+                });
+
+                // Refresh sessions to clear unread count logic if we had it
+                fetchSessions();
+
             } catch (error) {
-                console.error('Failed to fetch history:', error);
+                console.error('Failed to fetch history or mark read:', error);
             }
         };
 
-        fetchHistory();
+        fetchHistoryAndMarkRead();
     }, [selectedChat, user]);
 
     const handleSend = () => {
@@ -214,6 +255,14 @@ const Chat: React.FC = () => {
         setMessages([]);
     };
 
+    const handleChatSelect = (chat: typeof conversations[0]) => {
+        setSelectedChat(chat);
+        // Optimistic update: Clear unread count immediately in UI
+        setConversations(prev => prev.map(c =>
+            c.id === chat.id ? { ...c, unreadCount: 0 } : c
+        ));
+    };
+
     return (
         <div className="container" style={{ padding: '2rem 1rem', flex: 1, display: 'flex', flexDirection: 'column', width: '100%', maxWidth: '1200px', margin: '0 auto' }}>
             <Layout style={{ height: '100%', borderRadius: '8px', overflow: 'hidden', border: '1px solid #f0f0f0' }}>
@@ -248,14 +297,31 @@ const Chat: React.FC = () => {
                                 style={{
                                     padding: '12px 16px',
                                     cursor: 'pointer',
-                                    background: selectedChat.id === item.id ? '#e6f7ff' : 'transparent'
+                                    background: selectedChat?.id === item.id ? '#e6f7ff' : 'transparent'
                                 }}
-                                onClick={() => setSelectedChat(item)}
+                                onClick={() => handleChatSelect(item)}
                             >
                                 <List.Item.Meta
                                     avatar={<Avatar icon={<UserOutlined />} />}
                                     title={<Text ellipsis style={{ maxWidth: 180 }}>{item.name}</Text>}
-                                    description={item.lastMsg}
+                                    description={
+                                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                            <Text ellipsis style={{ maxWidth: 150 }}>{item.lastMsg}</Text>
+                                            {item.unreadCount > 0 && (
+                                                <span style={{
+                                                    backgroundColor: '#ff4d4f',
+                                                    color: 'white',
+                                                    borderRadius: '10px',
+                                                    padding: '0 6px',
+                                                    fontSize: '10px',
+                                                    height: '16px',
+                                                    lineHeight: '16px'
+                                                }}>
+                                                    {item.unreadCount}
+                                                </span>
+                                            )}
+                                        </div>
+                                    }
                                 />
                             </List.Item>
                         )}
