@@ -67,6 +67,9 @@ const Chat: React.FC = () => {
 
                     if (isFromThem || isFromMeToThem) {
                         setMessages(prev => {
+                            // Deduplicate based on ID if needed, but for now just append
+                            if (prev.some(m => m.id === (data.ID || data.id))) return prev;
+
                             return [...prev, {
                                 id: data.ID || Date.now(),
                                 text: data.content,
@@ -106,7 +109,7 @@ const Chat: React.FC = () => {
         };
     }, [user]);
 
-    // Fetch chat history when selectedChat changes
+    // Fetch chat history (Initial Load Only)
     useEffect(() => {
         if (!selectedChat || !user) return;
 
@@ -115,25 +118,24 @@ const Chat: React.FC = () => {
                 // Use the name (address) as targetId directly
                 const targetId = selectedChat.name;
 
-                console.log(`Fetching history for: ${targetId}`);
+                // console.log(`Fetching history for: ${targetId}`);
                 // Assuming the route is mounted under /auth/chat/messages based on user input
                 const response = await api.get(`/auth/chat/messages/${targetId}`);
 
                 if (response.data && response.data.data) {
                     const history = response.data.data;
-                    console.log('History fetched:', history);
+                    // console.log('History fetched:', history.length);
 
                     const formattedMessages = history.map((msg: any) => ({
                         id: msg.ID,
                         text: msg.content,
                         sender: msg.from_user_id === user.address ? 'me' : 'them'
                     }));
+
                     setMessages(formattedMessages);
                 }
             } catch (error) {
                 console.error('Failed to fetch history:', error);
-                // If 404, it might mean user doesn't exist or just no history? 
-                // Backend says: "该钱包地址未在该平台注册" returns 404.
             }
         };
 
