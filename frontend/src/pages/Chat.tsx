@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Input, Button, List, Avatar, Typography, Layout, theme } from 'antd';
 import { SendOutlined, UserOutlined } from '@ant-design/icons';
 import { useAuth } from '../context/AuthContext';
@@ -16,6 +16,12 @@ const Chat: React.FC = () => {
         // { id: '1', name: 'Student_A', lastMsg: 'Yes, it is!', userId: 999 } 
     ]);
     const [selectedChat, setSelectedChat] = useState<{ id: string, name: string, lastMsg: string, userId: number } | null>(null);
+    const selectedChatRef = useRef(selectedChat);
+
+    // Keep ref in sync
+    useEffect(() => {
+        selectedChatRef.current = selectedChat;
+    }, [selectedChat]);
 
     const [messages, setMessages] = useState<{ id: number, text: string, sender: 'me' | 'them' }[]>([]);
     const [input, setInput] = useState('');
@@ -43,15 +49,26 @@ const Chat: React.FC = () => {
             try {
                 const data = JSON.parse(event.data);
                 console.log('WS Message:', data);
-                // Handle incoming message (simplified for now)
-                // Assuming data structure matches backend Message struct
-                if (data.content) {
-                    const isMe = data.from_user_id === user.id;
-                    setMessages(prev => [...prev, {
-                        id: Date.now(),
-                        text: data.content,
-                        sender: isMe ? 'me' : 'them'
-                    }]);
+
+                // data matches Message struct: { ID, from_user_id, to_user_id, content, ... }
+                const currentChat = selectedChatRef.current;
+
+                if (data.content && currentChat) {
+                    const isFromThem = data.from_user_id === currentChat.userId;
+                    const isFromMeToThem = (data.from_user_id === user.id && data.to_user_id === currentChat.userId);
+
+                    // Only append if it belongs to the currently open chat
+                    if (isFromThem || isFromMeToThem) {
+                        setMessages(prev => {
+                            // Avoid duplicates if we optimistically added it (check by content and recent timestamp? strict dedup is hard without local IDs)
+                            // For now, trust server or simple length check if needed, but standard append is safer for 'accepting' logic
+                            return [...prev, {
+                                id: data.ID || Date.now(), // Use backend ID if available
+                                text: data.content,
+                                sender: data.from_user_id === user.id ? 'me' : 'them'
+                            }];
+                        });
+                    }
                 }
             } catch (e) {
                 console.error('WS Parse Error:', e);
