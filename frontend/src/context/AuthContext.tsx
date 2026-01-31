@@ -163,9 +163,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Check for existing token on mount (if user refreshes but wallet is still connected)
     useEffect(() => {
         const token = localStorage.getItem('auth_token');
+        console.log('AuthContext: Checking session restore. Token:', !!token, 'IsConnected:', isConnected);
+
         if (token && isConnected) {
+            console.log('AuthContext: Attempting to fetch user profile...');
             setIsLoading(true);
-            fetchUserProfile().finally(() => setIsLoading(false));
+            fetchUserProfile()
+                .then(() => console.log('AuthContext: Profile fetched successfully'))
+                .catch(err => console.error('AuthContext: Profile fetch failed', err))
+                .finally(() => setIsLoading(false));
+        } else if (token && !isConnected) {
+            console.log('AuthContext: Token exists but wallet not connected. Waiting for connection...');
         }
     }, [isConnected]);
 
