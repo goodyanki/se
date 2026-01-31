@@ -32,6 +32,7 @@ function App() {
                 <Route path="/login" element={<Login />} />
                 <Route path="/items/:id" element={<ItemDetail />} />
                 <Route path="/create-listing" element={<CreateListing />} />
+                <Route path="/edit-listing/:id" element={<CreateListing />} />
                 <Route path="/profile" element={<Profile />} />
                 <Route path="/verify" element={<VerifyEmail />} />
                 <Route path="/chat" element={<Chat />} />

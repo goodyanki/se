@@ -13,6 +13,23 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Prevent text selection cursor on clickable elements */
+button,
+a,
+.ant-btn,
+.ant-tabs-tab,
+.ant-radio-button-wrapper,
+.ant-tag,
+.ant-card,
+[role="button"],
+[onclick] {
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  cursor: pointer;
+}
+
 /* Utilities retained for layout */
 .container {
   max-width: 1200px;
