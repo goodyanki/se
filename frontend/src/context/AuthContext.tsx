@@ -3,6 +3,7 @@ import { useAccount, useDisconnect } from 'wagmi';
 import api from '../utils/api';
 
 export interface User {
+    id: number; // Added user ID for chat
     address: string;
     username: string;
     isVerified: boolean;
@@ -57,13 +58,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     // Directly set user state if available in response
                     if (userData) {
                         setUser({
+                            id: userData.id, // Extract ID
                             address: userData.wallet_address,
-                            username: `${userData.wallet_address.slice(0, 6)}...${userData.wallet_address.slice(-4)}`,
+                            username: `${userData.wallet_address.slice(0, 6)}...${userData.wallet_address.slice(-4)} `,
                             isVerified: userData.is_verified,
                             email: userData.email,
                             // map other fields if necessary
                         });
-                        setDebugLog(prev => prev + '\nUser state updated from login response');
+                        setDebugLog(prev => prev + '\nUser state updated from login response (ID: ' + userData.id + ')');
                     } else {
                         // Fallback if user object is not in login response
                         await fetchUserProfile();
@@ -146,8 +148,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (response.data && response.data.data) {
                 const userData = response.data.data;
                 setUser({
+                    id: userData.id, // Extract ID
                     address: userData.wallet_address,
-                    username: `${userData.wallet_address.slice(0, 6)}...${userData.wallet_address.slice(-4)}`,
+                    username: `${userData.wallet_address.slice(0, 6)}...${userData.wallet_address.slice(-4)} `,
                     isVerified: userData.is_verified,
                     email: userData.email
                 });
