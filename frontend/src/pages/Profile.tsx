@@ -96,7 +96,6 @@ const Profile: React.FC = () => {
 
             setLoadingPurchases(true);
             try {
-                // 1. Get List of Orders
                 const response = await api.get('/auth/orders/my');
                 console.log('My purchases response:', response.data);
 
@@ -104,41 +103,23 @@ const Profile: React.FC = () => {
                     const orders = response.data.data || [];
 
                     if (Array.isArray(orders) && orders.length > 0) {
-                        // 2. Fetch details for each product to show Title/Image
-                        // Using Promise.all for parallel fetching
-                        const enrichedOrders = await Promise.all(orders.map(async (order: any) => {
-                            try {
-                                const productId = order.product_id;
-                                if (!productId) return null; // Skip invalid
-
-                                const productRes = await api.get(`/products/${productId}`);
-                                if (productRes.data && productRes.data.code === 200 && productRes.data.data) {
-                                    const p = productRes.data.data;
-                                    return {
-                                        id: p.ID?.toString() || p.id?.toString(),
-                                        title: p.title || p.Title,
-                                        // Use Order Price to show what they paid
-                                        price: order.price || order.Price,
-                                        description: p.description || p.Description,
-                                        category: p.category || p.Category,
-                                        image: p.image_url || p.ImageUrl || 'https://placehold.co/400x300?text=No+Image',
-                                        seller: p.seller_addr || p.SellerAddr,
-                                        sellerAddress: p.seller_addr || p.SellerAddr,
-                                        status: 'SOLD', // Purchased items are inherently SOLD
-                                        createdAt: order.CreatedAt || order.created_at || new Date().toISOString(),
-                                        // Use TxHash from Order
-                                        onChainTxId: order.tx_hash || order.TxHash
-                                    };
-                                }
-                                return null;
-                            } catch (e) {
-                                console.warn(`Failed to fetch product detail for order ${order.ID}`, e);
-                                return null;
-                            }
+                        // Backend now returns enriched data with product info
+                        const purchases = orders.map((order: any) => ({
+                            id: order.id?.toString() || order.ID?.toString(),
+                            title: order.title || order.Title || 'Unknown Item',
+                            price: order.price || order.Price || 0,
+                            description: order.description || order.Description || '',
+                            category: order.category || order.Category || 'General',
+                            image: order.image_url || order.ImageUrl || 'https://placehold.co/400x300?text=No+Image',
+                            seller: order.seller_addr || order.SellerAddr,
+                            sellerAddress: order.seller_addr || order.SellerAddr,
+                            status: 'SOLD', // Purchased items are inherently SOLD
+                            createdAt: order.created_at || order.CreatedAt || new Date().toISOString(),
+                            // Use TxHash from Order
+                            onChainTxId: order.tx_hash || order.TxHash
                         }));
 
-                        // Filter out failed fetches
-                        setMyPurchases(enrichedOrders.filter(Boolean));
+                        setMyPurchases(purchases);
                     } else {
                         setMyPurchases([]);
                     }
@@ -152,6 +133,7 @@ const Profile: React.FC = () => {
                 setLoadingPurchases(false);
             }
         };
+
 
         fetchMyPurchases();
     }, [user]);

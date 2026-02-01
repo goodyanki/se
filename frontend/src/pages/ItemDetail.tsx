@@ -176,7 +176,17 @@ const ItemDetail: React.FC = () => {
                     const newTxId = (logs[0] as any).args.txId;
                     console.log("On-Chain Transaction ID:", newTxId);
 
-                    // 5. Sync with Backend
+                    // 5. Create Order Record in Backend
+                    await api.post('/auth/orders', {
+                        product_id: Number(item.id),
+                        on_chain_id: item.contractListingId.toString(),
+                        buyer_addr: user.address,
+                        seller_addr: item.sellerAddress,
+                        price: Number(item.price),
+                        tx_hash: txHash
+                    });
+
+                    // 6. Sync with Backend (Update Product Status)
                     await confirmPurchaseWithBackend(item.id, newTxId.toString());
 
                     hideLoading();

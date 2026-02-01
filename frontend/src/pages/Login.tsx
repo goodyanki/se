@@ -10,19 +10,15 @@ const Login: React.FC = () => {
     const { isLoggedIn, user, isWalletConnected, isLoading, debugLog, login } = useAuth();
     const navigate = useNavigate();
 
-    /* 
-    // Removed auto-redirect to support manual verification flow check
+    // Auto-redirect verified users to home
     useEffect(() => {
         if (isLoggedIn && user) {
             if (user.isVerified) {
+                message.success("Welcome back! Redirecting to marketplace...");
                 navigate('/');
-            } else {
-                message.warning("Please verify your email to continue.");
-                navigate('/verify');
             }
         }
     }, [isLoggedIn, user, navigate]);
-    */
 
     return (
         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', flex: 1 }}>
