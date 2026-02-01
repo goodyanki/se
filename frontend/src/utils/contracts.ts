@@ -3,7 +3,7 @@ import { sepolia } from 'wagmi/chains';
 import CampusMarketplaceABI from './abis/CampusMarketplace.json';
 
 // Contract Address
-export const CONTRACT_ADDRESS = "0x4CA400092f105d5581f9ed6918BBA0896417E173";
+export const CONTRACT_ADDRESS = "0x3FfAf5E999Fda995b7959249B2F2eFf494427457";
 
 // Helper for type-safe contract interaction
 export const CAMPUS_MARKETPLACE_CONFIG = {
