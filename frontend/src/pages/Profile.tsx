@@ -1,18 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Card, Button, Avatar, Statistic, Tag, Descriptions, Row, Col, Typography, Modal, Tabs, List, Empty, Spin } from 'antd';
-import { UserOutlined, MailTwoTone, SafetyCertificateTwoTone, WalletOutlined, ShoppingOutlined, AppstoreOutlined } from '@ant-design/icons';
+import { Card, Button, Avatar, Statistic, Tag, Descriptions, Row, Col, Typography, Modal, Tabs, List, Empty, Spin, Tooltip } from 'antd';
+import { UserOutlined, MailTwoTone, SafetyCertificateTwoTone, WalletOutlined, ShoppingOutlined, AppstoreOutlined, TransactionOutlined } from '@ant-design/icons';
 import { MOCK_ITEMS } from '../utils/mockData';
 import api from '../utils/api';
 
-const { Title, Text } = Typography;
+const { Title, Text, Paragraph } = Typography;
 
 const Profile: React.FC = () => {
     const { user, login } = useAuth();
     const [activeTab, setActiveTab] = useState('1');
-    const [myListings, setMyListings] = useState<typeof MOCK_ITEMS>([]);
+    const [myListings, setMyListings] = useState<any[]>([]);
+    const [myPurchases, setMyPurchases] = useState<any[]>([]);
     const [loadingProducts, setLoadingProducts] = useState(false);
+    const [loadingPurchases, setLoadingPurchases] = useState(false);
 
     // Refresh user data (call login API) on mount to ensure is_verified is up to date
     useEffect(() => {
@@ -49,11 +51,9 @@ const Profile: React.FC = () => {
                 console.log('My products response:', response.data);
 
                 if (response.data && response.data.code === 200) {
-                    // Handle both empty array and null data
                     const dataArray = response.data.data || [];
 
                     if (Array.isArray(dataArray) && dataArray.length > 0) {
-                        // Map backend product format to frontend format
                         const products = dataArray.map((item: any) => ({
                             id: item.ID?.toString() || item.id?.toString(),
                             title: item.title || item.Title,
@@ -63,22 +63,20 @@ const Profile: React.FC = () => {
                             image: item.image_url || item.ImageUrl || 'https://placehold.co/400x300?text=No+Image',
                             seller: user.username,
                             sellerAddress: user.address,
+                            // Status: 1=Available, 2=Locked, 3=Sold
                             status: (item.status === 1 ? 'AVAILABLE' : item.status === 3 ? 'SOLD' : 'PENDING') as 'AVAILABLE' | 'SOLD' | 'PENDING',
-                            createdAt: item.CreatedAt || item.created_at || new Date().toISOString()
+                            createdAt: item.CreatedAt || item.created_at || new Date().toISOString(),
+                            onChainTxId: item.on_chain_tx_id || item.OnChainTxID
                         }));
                         setMyListings(products);
                     } else {
-                        console.log('No products found, setting empty array');
                         setMyListings([]);
                     }
                 } else {
-                    console.warn('Unexpected response format or error code');
                     setMyListings([]);
                 }
             } catch (error: any) {
                 console.error('Failed to fetch products:', error);
-                console.error('Error details:', error.response?.data);
-                // Don't show error to user, just use empty array
                 setMyListings([]);
             } finally {
                 setLoadingProducts(false);
@@ -88,13 +86,78 @@ const Profile: React.FC = () => {
         fetchMyProducts();
     }, [user]);
 
-    // Mock purchases - in real implementation, this would come from backend
-    // For now, showing items where user is NOT the seller as mock purchases
-    const myPurchases = MOCK_ITEMS.filter(item =>
-        item.status === 'SOLD' && item.sellerAddress !== user.address
-    ).slice(0, 3); // Limit to 3 for demo
+    // Fetch user's purchases
+    useEffect(() => {
+        const fetchMyPurchases = async () => {
+            if (!user) {
+                setMyPurchases([]);
+                return;
+            }
 
-    const renderProductCard = (item: typeof MOCK_ITEMS[0]) => (
+            setLoadingPurchases(true);
+            try {
+                // 1. Get List of Orders
+                const response = await api.get('/auth/orders/my');
+                console.log('My purchases response:', response.data);
+
+                if (response.data && response.data.code === 200) {
+                    const orders = response.data.data || [];
+
+                    if (Array.isArray(orders) && orders.length > 0) {
+                        // 2. Fetch details for each product to show Title/Image
+                        // Using Promise.all for parallel fetching
+                        const enrichedOrders = await Promise.all(orders.map(async (order: any) => {
+                            try {
+                                const productId = order.product_id;
+                                if (!productId) return null; // Skip invalid
+
+                                const productRes = await api.get(`/products/${productId}`);
+                                if (productRes.data && productRes.data.code === 200 && productRes.data.data) {
+                                    const p = productRes.data.data;
+                                    return {
+                                        id: p.ID?.toString() || p.id?.toString(),
+                                        title: p.title || p.Title,
+                                        // Use Order Price to show what they paid
+                                        price: order.price || order.Price,
+                                        description: p.description || p.Description,
+                                        category: p.category || p.Category,
+                                        image: p.image_url || p.ImageUrl || 'https://placehold.co/400x300?text=No+Image',
+                                        seller: p.seller_addr || p.SellerAddr,
+                                        sellerAddress: p.seller_addr || p.SellerAddr,
+                                        status: 'SOLD', // Purchased items are inherently SOLD
+                                        createdAt: order.CreatedAt || order.created_at || new Date().toISOString(),
+                                        // Use TxHash from Order
+                                        onChainTxId: order.tx_hash || order.TxHash
+                                    };
+                                }
+                                return null;
+                            } catch (e) {
+                                console.warn(`Failed to fetch product detail for order ${order.ID}`, e);
+                                return null;
+                            }
+                        }));
+
+                        // Filter out failed fetches
+                        setMyPurchases(enrichedOrders.filter(Boolean));
+                    } else {
+                        setMyPurchases([]);
+                    }
+                } else {
+                    setMyPurchases([]);
+                }
+            } catch (error: any) {
+                console.error('Failed to fetch purchases:', error);
+                setMyPurchases([]);
+            } finally {
+                setLoadingPurchases(false);
+            }
+        };
+
+        fetchMyPurchases();
+    }, [user]);
+
+
+    const renderProductCard = (item: any) => (
         <List.Item style={{ width: '100%', display: 'flex' }}>
             <Link to={`/items/${item.id}`} style={{ width: '100%', display: 'block' }}>
                 <Card
@@ -103,7 +166,9 @@ const Profile: React.FC = () => {
                         width: '100%',
                         height: '100%',
                         display: 'flex',
-                        flexDirection: 'column'
+                        flexDirection: 'column',
+                        opacity: item.status === 'SOLD' ? 0.7 : 1, // Visual cue for SOLD items
+                        position: 'relative'
                     }}
                     bodyStyle={{
                         flex: 1,
@@ -122,9 +187,27 @@ const Profile: React.FC = () => {
                                     left: 0,
                                     width: '100%',
                                     height: '100%',
-                                    objectFit: 'cover'
+                                    objectFit: 'cover',
+                                    filter: item.status === 'SOLD' ? 'grayscale(100%)' : 'none'
                                 }}
                             />
+                            {item.status === 'SOLD' && (
+                                <div style={{
+                                    position: 'absolute',
+                                    top: '50%',
+                                    left: '50%',
+                                    transform: 'translate(-50%, -50%)',
+                                    backgroundColor: 'rgba(0,0,0,0.7)',
+                                    color: 'white',
+                                    padding: '8px 16px',
+                                    borderRadius: '4px',
+                                    fontWeight: 'bold',
+                                    fontSize: '1.2rem',
+                                    border: '2px solid white'
+                                }}>
+                                    {activeTab === '2' ? 'PURCHASED' : 'SOLD'}
+                                </div>
+                            )}
                         </div>
                     }
                 >
@@ -138,13 +221,24 @@ const Profile: React.FC = () => {
                         }
                         description={
                             <div>
-                                <Title level={4} style={{ color: '#0072CE', margin: '8px 0' }}>${item.price}</Title>
+                                <Title level={4} style={{ color: item.status === 'SOLD' ? '#999' : '#0072CE', margin: '8px 0' }}>
+                                    ${item.price}
+                                </Title>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <Tag color={item.status === 'AVAILABLE' ? 'success' : item.status === 'SOLD' ? 'error' : 'warning'}>
+                                    <Tag color={item.status === 'AVAILABLE' ? 'success' : item.status === 'SOLD' ? 'default' : 'warning'}>
                                         {item.status}
                                     </Tag>
                                     <Text type="secondary" style={{ fontSize: '12px' }}>{item.category}</Text>
                                 </div>
+                                {item.status === 'SOLD' && item.onChainTxId && (
+                                    <div style={{ marginTop: '8px', borderTop: '1px solid #f0f0f0', paddingTop: '8px' }}>
+                                        <Tooltip title={`On-Chain Tx ID: ${item.onChainTxId}`}>
+                                            <Tag icon={<TransactionOutlined />} color="blue" style={{ width: '100%', textAlign: 'center', cursor: 'help' }}>
+                                                Tx ID: {item.onChainTxId.substring(0, 6)}...
+                                            </Tag>
+                                        </Tooltip>
+                                    </div>
+                                )}
                             </div>
                         }
                     />
@@ -190,7 +284,11 @@ const Profile: React.FC = () => {
             ),
             children: (
                 <div style={{ marginTop: '1rem' }}>
-                    {myPurchases.length === 0 ? (
+                    {loadingPurchases ? (
+                        <div style={{ textAlign: 'center', padding: '2rem' }}>
+                            <Spin size="large" />
+                        </div>
+                    ) : myPurchases.length === 0 ? (
                         <Empty description="You haven't purchased any items yet" />
                     ) : (
                         <List
@@ -234,7 +332,7 @@ const Profile: React.FC = () => {
                     <Card style={{ marginTop: '1rem' }}>
                         <Row gutter={16} style={{ textAlign: 'center' }}>
                             <Col span={12}>
-                                <Statistic title="Sold" value={MOCK_ITEMS.filter(i => i.sellerAddress === user.address && i.status === 'SOLD').length} />
+                                <Statistic title="Sold" value={myListings.filter(i => i.status === 'SOLD').length} />
                             </Col>
                             <Col span={12}>
                                 <Statistic title="Active" value={myListings.filter(i => i.status === 'AVAILABLE').length} />
@@ -264,4 +362,3 @@ const Profile: React.FC = () => {
 };
 
 export default Profile;
-
