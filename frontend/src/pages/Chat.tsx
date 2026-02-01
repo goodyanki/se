@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Input, Button, List, Avatar, Typography, Layout, theme } from 'antd';
 import { SendOutlined, UserOutlined } from '@ant-design/icons';
 import { useAuth } from '../context/AuthContext';
@@ -17,6 +18,9 @@ const Chat: React.FC = () => {
     const selectedChatRef = useRef(selectedChat);
     const socketRef = useRef<WebSocket | null>(null);
 
+    // URL Params for Contact Seller
+    const [searchParams] = useSearchParams();
+
     useEffect(() => {
         selectedChatRef.current = selectedChat;
     }, [selectedChat]);
@@ -34,6 +38,39 @@ const Chat: React.FC = () => {
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
+
+    // Handle "Contact Seller" - Auto-select or create chat from URL param
+    useEffect(() => {
+        const sellerAddr = searchParams.get('seller');
+        // Only run if we have a seller address, user is logged in, and conversations are loaded (or at least initialized)
+        if (sellerAddr && user) {
+
+            // 1. Check if we already have a conversation with this seller
+            const existing = conversations.find(c => c.name === sellerAddr);
+
+            if (existing) {
+                // If exists, just select it
+                if (selectedChat?.id !== existing.id) {
+                    setSelectedChat(existing);
+                }
+            } else {
+                // If not exists, create a temporary "new" conversation in the UI
+                const newChat = {
+                    id: sellerAddr,
+                    name: sellerAddr,
+                    lastMsg: 'New conversation',
+                    unreadCount: 0
+                };
+
+                // Prevent duplicate additions or infinite loops
+                const alreadyInList = conversations.some(c => c.id === sellerAddr);
+                if (!alreadyInList) {
+                    setConversations(prev => [newChat, ...prev]);
+                    setSelectedChat(newChat);
+                }
+            }
+        }
+    }, [searchParams, user, conversations]);
 
     const connectWebSocket = () => {
         if (!user) return;
@@ -164,11 +201,6 @@ const Chat: React.FC = () => {
                     setMessages(formattedMessages);
                 }
 
-                // Backend endpoint: POST /auth/chat/read (form-data or json? User said c.PostForm("from_wallet"))
-                // Axios by default sends JSON. If backend uses c.PostForm, we might need querystring or specific header.
-                // Let's assume standard JSON first, or URL encoded body if specifically "PostForm".
-                // Gin's c.PostForm usually expects application/x-www-form-urlencoded or multipart/form-data.
-
                 // 2. Mark as Read
                 // Use FormData to ensure compatibility with backend c.PostForm
                 const formData = new FormData();
@@ -251,6 +283,7 @@ const Chat: React.FC = () => {
             id: newAddress, // Use address as ID
             name: newAddress,
             lastMsg: 'New conversation started',
+            unreadCount: 0 // Initialize for consistency
         };
 
         console.log(`Created chat for ${newAddress}`);
@@ -315,7 +348,7 @@ const Chat: React.FC = () => {
                                     description={
                                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                                             <Text ellipsis style={{ maxWidth: 150 }}>{item.lastMsg}</Text>
-                                            {item.unreadCount > 0 && (
+                                            {(item.unreadCount ?? 0) > 0 && (
                                                 <span style={{
                                                     backgroundColor: '#ff4d4f',
                                                     color: 'white',
