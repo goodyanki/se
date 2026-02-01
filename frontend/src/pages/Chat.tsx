@@ -43,7 +43,7 @@ const Chat: React.FC = () => {
         }
 
         const token = localStorage.getItem('auth_token');
-        const wsUrl = `ws://192.168.0.7:8080/api/auth/ws?token=${token}`;
+        const wsUrl = `ws://192.168.0.8:8080/api/auth/ws?token=${token}`;
 
         console.log('Connecting to WS:', wsUrl);
         setConnectionStatus('CONNECTING');

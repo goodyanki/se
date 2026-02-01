@@ -1,26 +1,36 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Form, Input, Select, InputNumber, Button, Card, Typography, message, Upload, Modal } from 'antd';
+import { Form, Input, Select, InputNumber, Button, Card, Typography, message, Upload, Modal, Alert, Steps } from 'antd';
 import { useAuth } from '../context/AuthContext';
-import { UploadOutlined, DeleteOutlined } from '@ant-design/icons';
+import { UploadOutlined, DeleteOutlined, RocketOutlined } from '@ant-design/icons';
 import { CATEGORIES } from '../utils/mockData';
 import api from '../utils/api';
 import type { UploadFile, RcFile } from 'antd/es/upload/interface';
+import { useWriteContract } from 'wagmi';
+import { CAMPUS_MARKETPLACE_CONFIG } from '../utils/contracts';
+import { parseEther, parseEventLogs } from 'viem';
+import { config as wagmiConfig } from '../wagmi';
+import { waitForTransactionReceipt } from '@wagmi/core';
 
-const { Title } = Typography;
+const { Title, Text } = Typography;
 const { Option } = Select;
 const { TextArea } = Input;
+const { Step } = Steps;
 
 const CreateListing: React.FC = () => {
     const navigate = useNavigate();
     const { id } = useParams<{ id: string }>();
     const { user, isLoading, isWalletConnected } = useAuth();
     const [loading, setLoading] = useState(false);
+    const [submittingStep, setSubmittingStep] = useState<number>(0);
     const [uploading, setUploading] = useState(false);
     const [imageUrl, setImageUrl] = useState<string | null>(null);
     const [fileList, setFileList] = useState<UploadFile[]>([]);
     const [form] = Form.useForm();
     const [loadingProduct, setLoadingProduct] = useState(false);
+
+    // Web3 Hooks
+    const { writeContractAsync } = useWriteContract();
 
     // Determine if we're in edit mode
     const isEditMode = !!id;
@@ -121,39 +131,22 @@ const CreateListing: React.FC = () => {
                 },
             });
 
-            console.log('Upload response:', response.data);
-
-            // Backend returns: { code: 200, msg: "上传成功", url: "http://..." }
             if (response.data && response.data.code === 200 && response.data.url) {
                 const uploadedUrl = response.data.url;
-
-                // Save URL to state
                 setImageUrl(uploadedUrl);
-
-                // Save URL to localStorage for persistence
-                localStorage.setItem('lastUploadedImageUrl', uploadedUrl);
-                localStorage.setItem('lastUploadResponse', JSON.stringify(response.data));
-
-                console.log('Image URL saved:', uploadedUrl);
-
                 setFileList([{
                     uid: file.uid,
                     name: file.name,
                     status: 'done',
                     url: uploadedUrl,
                 }]);
-                message.success(response.data.msg || 'Image uploaded successfully!');
+                message.success('Image uploaded successfully!');
             } else {
                 throw new Error('Invalid response format');
             }
         } catch (error: any) {
             console.error('Upload failed:', error);
-            console.error('Error response:', error.response?.data);
-            console.error('Error status:', error.response?.status);
-            console.error('Error headers:', error.response?.headers);
-
-            const errorMsg = error.response?.data?.message || error.response?.data?.msg || error.response?.data?.error || 'Failed to upload image. Please try again.';
-            message.error(`Upload failed: ${errorMsg}`);
+            message.error('Failed to upload image. Please try again.');
             setFileList([]);
         } finally {
             setUploading(false);
@@ -178,6 +171,83 @@ const CreateListing: React.FC = () => {
         setLoading(true);
 
         try {
+            let contractListingId = 0;
+            let txHash = "";
+
+            if (!isEditMode) {
+                // === Web3 Creation Flow ===
+                setSubmittingStep(1); // 1: Blockchain
+
+                message.loading({ content: 'Please sign the transaction in your wallet...', key: 'tx' });
+
+                // 1. Send Transaction
+                txHash = await writeContractAsync({
+                    ...CAMPUS_MARKETPLACE_CONFIG,
+                    functionName: 'createListing',
+                    args: [
+                        values.title,          // Title
+                        "",                    // Description (Empty to save gas, stored in DB)
+                        parseEther(values.price.toString()), // Price in Wei
+                        ""                     // ImageHash (Empty to save gas, stored in DB)
+                    ]
+                });
+
+                message.loading({ content: 'Transaction sent! Waiting for confirmation...', key: 'tx' });
+                console.log("Creation Tx Hash:", txHash);
+
+                // 2. Wait for Receipt
+                const receipt = await waitForTransactionReceipt(wagmiConfig, { hash: txHash });
+
+                if (receipt.status !== 'success') {
+                    throw new Error("Blockchain transaction failed.");
+                }
+
+                // 3. Parse Logs for Listing ID
+                console.log("Transaction Receipt:", receipt);
+                console.log("Raw Logs:", receipt.logs);
+
+                // Attempt 1: Standard viem parsing
+                const logs = parseEventLogs({
+                    abi: CAMPUS_MARKETPLACE_CONFIG.abi,
+                    eventName: 'ListingCreated',
+                    logs: receipt.logs,
+                });
+
+                console.log("Parsed Logs (Attempt 1):", logs);
+
+                if (logs && logs.length > 0) {
+                    contractListingId = Number((logs[0] as any).args.id);
+                    console.log("✅ CHECKPOINT: Captured ID via standard parsing:", contractListingId);
+                } else {
+                    console.warn("⚠️ Standard parsing failed. Trying manual fallback...");
+                    try {
+                        // Manual fallback: Check topics directly
+                        // Event: ListingCreated(uint256 indexed id, address indexed seller, ...)
+                        // Topics: [Signature, id, seller]
+                        const targetLog = receipt.logs.find(l => l.topics.length >= 2);
+                        if (targetLog) {
+                            const idHex = targetLog.topics[1]; // First indexed param
+                            if (idHex) {
+                                contractListingId = parseInt(idHex, 16);
+                                console.log("✅ CHECKPOINT: Captured ID via manual fallback:", contractListingId);
+                            }
+                        }
+                    } catch (err) {
+                        console.error("Manual fallback failed:", err);
+                    }
+                }
+
+                if (contractListingId === 0) {
+                    console.error("❌ CRITICAL: Failed to get Listing ID. Backend sync will likely fail.");
+                    message.error("Warning: Blockchain ID missing. Check console for details.");
+                }
+
+                message.success({ content: 'Blockchain transaction verified!', key: 'tx' });
+            }
+
+            // === Backend Sync ===
+            setSubmittingStep(2); // 2: Backend Sync
+
             const productData = {
                 title: values.title,
                 description: values.description,
@@ -185,7 +255,11 @@ const CreateListing: React.FC = () => {
                 image_url: imageUrl,
                 category: values.category,
                 seller_addr: user.address,
-                status: 1 // 1 = Available for sale
+                status: 1, // 1 = Available
+
+                // New Fields matching Backend Schema
+                on_chain_id: contractListingId.toString(),
+                on_chain_tx_id: "",
             };
 
             console.log(isEditMode ? 'Updating product:' : 'Creating product:', productData);
@@ -194,35 +268,42 @@ const CreateListing: React.FC = () => {
                 ? await api.put(`/auth/products/${id}`, productData)
                 : await api.post('/auth/products', productData);
 
-            console.log(isEditMode ? '=== Product Update Response ===' : '=== Product Creation Response ===');
-            console.log('Full response:', response);
-            console.log('Response data:', response.data);
-            console.log('Response code:', response.data?.code);
-            console.log('Response message:', response.data?.msg || response.data?.message);
-            console.log('Product data:', response.data?.data);
-            console.log('================================');
-
             if (response.data && response.data.code === 200) {
-                message.success(isEditMode ? 'Product updated successfully!' : 'Listing created successfully!');
+                setSubmittingStep(3); // Done
+                message.success(isEditMode ? 'Product updated successfully!' : 'Listing created on Blockchain & Database!');
 
                 if (isEditMode) {
-                    // Navigate back to product detail page
                     navigate(`/items/${id}`);
                 } else {
-                    // Clear form and navigate to home
                     form.resetFields();
                     setImageUrl(null);
                     setFileList([]);
-                    navigate('/');
+
+                    // Show success modal
+                    Modal.success({
+                        title: 'Listing Published!',
+                        content: (
+                            <div>
+                                <p>Your item is now live on the blockchain.</p>
+                                <p>Listing ID: {contractListingId}</p>
+                            </div>
+                        ),
+                        onOk: () => navigate('/')
+                    });
                 }
             } else {
                 throw new Error(response.data?.message || `Failed to ${isEditMode ? 'update' : 'create'} listing`);
             }
         } catch (error: any) {
             console.error(`Product ${isEditMode ? 'update' : 'creation'} failed:`, error);
-            message.error(error.response?.data?.message || `Failed to ${isEditMode ? 'update' : 'create'} listing. Please try again.`);
+
+            let errMsg = error.message || "Unknown error";
+            if (errMsg.includes("User rejected")) errMsg = "Transaction rejected by user.";
+
+            message.error(error.response?.data?.message || errMsg || `Failed to ${isEditMode ? 'update' : 'create'} listing.`);
         } finally {
             setLoading(false);
+            setSubmittingStep(0);
         }
     };
 
@@ -239,6 +320,17 @@ const CreateListing: React.FC = () => {
             <Title level={2} style={{ marginBottom: '2rem' }}>
                 {isEditMode ? 'Edit Listing' : 'Create New Listing'}
             </Title>
+
+            {!isEditMode && loading && (
+                <Card style={{ marginBottom: '2rem' }}>
+                    <Steps current={submittingStep}>
+                        <Step title="Sign Transaction" description="Wallet approval" />
+                        <Step title="Blockchain Confirm" description="Wait for block" />
+                        <Step title="Sync Database" description="Save details" />
+                    </Steps>
+                </Card>
+            )}
+
             <Card>
                 <Form
                     form={form}
@@ -266,9 +358,13 @@ const CreateListing: React.FC = () => {
                                     style={{ width: '100%' }}
                                     size="large"
                                     min={0}
-                                    placeholder="Price"
+                                    placeholder="Price in ETH"
+                                    disabled={isEditMode} // Disable price edit to prevent chain desync
+                                    addonAfter="ETH"
                                 />
                             </Form.Item>
+
+                            {isEditMode && <Text type="secondary" style={{ fontSize: '12px', display: 'block', marginTop: '-10px', marginBottom: '10px' }}>Price cannot be changed after listing.</Text>}
 
                             <Form.Item
                                 name="category"
@@ -323,8 +419,9 @@ const CreateListing: React.FC = () => {
                             block
                             loading={loading}
                             disabled={!imageUrl || uploading}
+                            icon={!isEditMode && <RocketOutlined />}
                         >
-                            Publish Listing
+                            {isEditMode ? 'Update Listing' : 'Publish to Blockchain'}
                         </Button>
                     </Form.Item>
                 </Form>
